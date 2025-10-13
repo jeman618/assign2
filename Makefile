@@ -53,10 +53,10 @@ numbers: numbersmain.c lwp.h
 
 # Linux-only snakes demos (guarded by platform selection above)
 randomsnakes: randomsnakes.c snakes.h util.h lwp.h
-	$(CC) $(CFLAGS) -o $@ randomsnakes.c -L. -llwp $(SNAKESLIB) $(CURSES)
+	$(CC) $(CFLAGS) -o $@ randomsnakes.c util.c -L. -llwp $(SNAKESLIB) $(CURSES)
 
 hungrysnakes: hungrysnakes.c snakes.h util.h lwp.h
-	$(CC) $(CFLAGS) -o $@ hungrysnakes.c -L. -llwp $(SNAKESLIB) $(CURSES)
+	$(CC) $(CFLAGS) -o $@ hungrysnakes.c util.c -L. -llwp $(SNAKESLIB) $(CURSES)
 
 clean:
 	rm -f $(OBJ) $(SO) numbers randomsnakes hungrysnakes
