@@ -1,0 +1,15 @@
+# Build outputs
+*.o
+*.so
+*.dylib
+numbers
+randomsnakes
+hungrysnakes
+
+# Editor junk
+.DS_Store
+.vscode/
+.idea/
+
+# Misc
+*.swp

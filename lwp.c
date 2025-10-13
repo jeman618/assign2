@@ -1,72 +1,243 @@
+// lwp.c — minimal user-level threads with a round-robin scheduler
+// "studenty" version that matches your partner's style and names.
+
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
 #include "lwp.h"
-// Making custom LWPs with smiles and tears
 
-// Making a Round Robin Scheduler
-thread head = NULL;
-thread current = NULL;
-int qlen = 0;
+/* ====== Scheduler state ====== */
+thread head    = NULL;  /* RR ready queue head (circular, uses sched_one/sched_two) */
+thread current = NULL;  /* currently running LWP */
+int    qlen    = 0;     /* number of runnable LWPs */
 
-// initialize the scheduler
-void rr_init(void) {
-    head = NULL;
-    current = NULL;
-    qlen = 0;
+/* ====== Book-keeping ====== */
+static tid_t  next_tid = 1;
+static thread all_list = NULL;                  /* singly linked via lib_one   */
+static thread morgue_h = NULL, morgue_t = NULL; /* terminated threads FIFO     */
+static thread wait_h   = NULL, wait_t   = NULL; /* waiters (blocked in wait)   */
+
+static scheduler CurrSched;                     /* active scheduler vtable     */
+
+#define QNEXT(t) ((t)->sched_one)
+#define QPREV(t) ((t)->sched_two)
+
+/* tiny list helpers */
+static void push_all(thread t){ t->lib_one = all_list; all_list = t; }
+static void wait_push(thread t){
+  t->exited = NULL;
+  if(!wait_t){ wait_h = wait_t = t; } else { wait_t->exited = t; wait_t = t; }
+}
+static thread wait_pop(void){
+  if(!wait_h) return NULL;
+  thread t = wait_h; wait_h = t->exited; if(!wait_h) wait_t = NULL; t->exited = NULL; return t;
+}
+static void morgue_push(thread t){
+  t->exited = NULL;
+  if(!morgue_t){ morgue_h = morgue_t = t; } else { morgue_t->exited = t; morgue_t = t; }
+}
+static thread morgue_pop(void){
+  if(!morgue_h) return NULL;
+  thread t = morgue_h; morgue_h = t->exited; if(!morgue_h) morgue_t = NULL; t->exited = NULL; return t;
 }
 
-// cleans up scheduler
-void rr_shutdown(void) {
-    head = NULL;
-    current = NULL;
-    qlen = 0;
+/* ====== Stack helpers ====== */
+static size_t page_align(size_t n){ long p = sysconf(_SC_PAGESIZE); return (n+p-1)/p*p; }
+
+static void *alloc_stack(size_t *out_sz){
+  struct rlimit rl; size_t want;
+  if(getrlimit(RLIMIT_STACK,&rl)==0 && rl.rlim_cur>0 && rl.rlim_cur!=RLIM_INFINITY)
+    want = (size_t)rl.rlim_cur;
+  else
+    want = 8ul<<20;              /* 8 MB default */
+  want = page_align(want);
+  void *base = mmap(NULL,want,PROT_READ|PROT_WRITE,
+                    MAP_PRIVATE|MAP_ANONYMOUS
+  #ifdef MAP_STACK
+                    |MAP_STACK
+  #endif
+                    ,-1,0);
+  if(base==MAP_FAILED) return NULL;
+  *out_sz = want; return base;
+}
+static void free_stack(void *base,size_t sz){ if(base && sz) munmap(base,sz); }
+
+/* ====== RR scheduler ====== */
+void rr_init(void){ head=NULL; current=NULL; qlen=0; }
+void rr_shutdown(void){ head=NULL; current=NULL; qlen=0; }
+
+void rr_admit(thread t){
+  if(!t) return;
+  if(!head){ head=t; QNEXT(t)=QPREV(t)=t; qlen=1; return; }
+  thread tail = QPREV(head);
+  QNEXT(t)=head; QPREV(t)=tail;
+  QNEXT(tail)=t; QPREV(head)=t;
+  qlen++;
 }
 
-// adds a new thread
-void rr_admit(thread new);
-
-// removes a thread
-void rr_remove(thread victim);
-
-// returns to the next thread, returns NULL if there isn't one
-thread rr_next(void);
-
-// returns number of runnable threads
-int rr_qlen(void) {
-    return qlen;
+void rr_remove(thread t){
+  if(!t || !head) return;
+  if(QNEXT(t)==t && QPREV(t)==t){ head=NULL; qlen=0; return; }
+  QNEXT(QPREV(t)) = QNEXT(t);
+  QPREV(QNEXT(t)) = QPREV(t);
+  if(head==t) head = QNEXT(t);
+  qlen--;
+  QNEXT(t)=QPREV(t)=NULL;
 }
 
-struct scheduler rr_publish = {NULL, NULL, rr_admit, rr_remove, rr_next, rr_qlen};
+thread rr_next(void){
+  if(!head) return NULL;
+  thread pick = head;
+  head = QNEXT(head);  /* rotate */
+  return pick;
+}
+
+int rr_qlen(void){ return qlen; }
+
+/* publish a scheduler table */
+struct scheduler rr_publish = { rr_init, rr_shutdown, rr_admit, rr_remove, rr_next, rr_qlen };
 scheduler RoundRobin = &rr_publish;
 
-// creates new LWP and adds it to current scheduler
-tid_t lwp_create(lwpfun fucnction, void *argument);
+/* ====== Context switch + launch shim ====== */
+extern void swap_rfiles(rfile *old, rfile *new);
 
-// starts the LWP system
-void lwp_start(void);
-
-// yields control to another LWP as indicated by scheduler
-void lwp_yield(void);
-
-// terminates current LWP and yields to whatever thread the scheduler chooses
-void lwp_exit(int exitval);
-
-// waits for thread to be terminated
-tid_t lwp_wait(int *status);
-
-// gets tid of the calling thread
-tid_t lwp_gettid(void);
-
-// returns thread with corresponding tid
-thread tid2thread(tid_t tid);
-
-// install a new scheduler
-void lwp_set_scheduler(scheduler sched);
-
-// find out what the current scheduler is
-scheduler lwp_get_scheduler(void);
-
-int main () {
-    printf("Do Bronx");
-    return 0;
+static void lwp_wrap(lwpfun fun, void *arg){
+  int rv = fun(arg);
+  lwp_exit(rv); /* never returns */
 }
+
+/* first time we "return" here after swap_rfiles loads the new state */
+static void lwp_stub(void){
+  lwpfun f = (lwpfun)current->state.rdi;
+  void  *a = (void*) current->state.rsi;
+  lwp_wrap(f,a);
+}
+
+static void jump_to(thread next){
+  thread prev = current;
+  current = next;
+  if(prev==next) return;
+  if(prev) swap_rfiles(&prev->state,&next->state);
+  else     swap_rfiles(NULL,&next->state);
+}
+
+/* ====== API ====== */
+void lwp_set_scheduler(scheduler s){
+  if(!s) s = RoundRobin;
+  if(CurrSched == s) return;
+  CurrSched = s;
+  if(CurrSched->init) CurrSched->init();
+}
+scheduler lwp_get_scheduler(void){ return CurrSched ? CurrSched : RoundRobin; }
+
+thread tid2thread(tid_t tid){
+  for(thread t=all_list; t; t=t->lib_one) if(t->tid==tid) return t;
+  return NULL;
+}
+
+tid_t lwp_create(lwpfun func, void *argument){
+  thread t = calloc(1,sizeof(*t));
+  if(!t) return NO_THREAD;
+
+  t->tid = next_tid++;
+  t->status = MKTERMSTAT(LWP_LIVE,0);
+
+  /* stack + initial context */
+  size_t sz=0;
+  t->stack = (unsigned long*)alloc_stack(&sz);
+  if(!t->stack){ free(t); return NO_THREAD; }
+  t->stacksize = sz;
+
+  memset(&t->state,0,sizeof t->state);
+  t->state.fxsave = FPU_INIT;
+
+  /* >>> Correct initial frame for swap_rfiles' `leave; ret` <<<
+     Layout on the *new* stack:
+       [rbp]     : fake saved %rbp (any value; we use 0)
+       [rbp+8]   : return address (lwp_stub)
+     We set new->rbp = &fake_rbp, and new->rsp is arbitrary (set to rbp+8). */
+  uintptr_t top   = (uintptr_t)t->stack + t->stacksize;
+  top &= ~((uintptr_t)0xF);                 /* 16-byte align stack top       */
+  uintptr_t frame = top - 16;               /* two words for rbp + ret       */
+  *(void**)(frame + 0) = (void*)0;          /* fake saved %rbp               */
+  *(void**)(frame + 8) = (void*)lwp_stub;   /* return address                 */
+  t->state.rbp = frame;                     /* leave: mov rbp->rsp; pop rbp   */
+  t->state.rsp = frame + 8;                 /* not used by leave, harmless    */
+
+  /* pass function & argument via registers for the stub */
+  t->state.rdi = (unsigned long)func;
+  t->state.rsi = (unsigned long)argument;
+
+  push_all(t);
+  if(!CurrSched) lwp_set_scheduler(NULL);
+  CurrSched->admit(t);
+  return t->tid;
+}
+
+void lwp_start(void){
+  if(current) return;                 /* already in LWP world */
+  thread me = calloc(1,sizeof(*me));
+  if(!me) return;
+  me->tid = next_tid++;
+  me->status = MKTERMSTAT(LWP_LIVE,0);
+  /* NOTE: me->stack==NULL so we never unmap the real process stack */
+  push_all(me);
+  if(!CurrSched) lwp_set_scheduler(NULL);
+  CurrSched->admit(me);
+  current = me;
+  lwp_yield();
+}
+
+void lwp_yield(void){
+  if(!CurrSched) lwp_set_scheduler(NULL);
+  thread next = CurrSched->next();
+  if(!next) _exit(LWPTERMSTAT(current?current->status:0));
+  jump_to(next);
+}
+
+void lwp_exit(int exitval){
+  if(!current) _exit(exitval & 0xFF);
+  current->status = MKTERMSTAT(LWP_TERM, exitval & 0xFF);
+
+  CurrSched->remove(current);
+
+  /* if someone is waiting, wake oldest waiter and hand off the corpse;
+     otherwise park the corpse in the morgue. */
+  thread waiter = wait_pop();
+  if(waiter){
+    waiter->exited = current;
+    CurrSched->admit(waiter);
+  }else{
+    morgue_push(current);
+  }
+
+  thread next = CurrSched->next();
+  if(!next) _exit(LWPTERMSTAT(current->status));
+  jump_to(next);
+}
+
+tid_t lwp_wait(int *status){
+  thread corpse = morgue_pop();
+  if(!corpse){
+    /* no corpse yet: only block if someone else can run */
+    if(!CurrSched || CurrSched->qlen() <= 1) return NO_THREAD;
+    thread self = current;
+    CurrSched->remove(self);
+    wait_push(self);
+    lwp_yield();                 /* resumes when paired with a corpse */
+    corpse = self->exited;
+  }
+
+  if(status) *status = (int)corpse->status;
+  tid_t id = corpse->tid;
+  if(corpse->stack) free_stack(corpse->stack,corpse->stacksize); /* never free main */
+  free(corpse);
+  return id;
+}
+
+tid_t lwp_gettid(void){ return current ? current->tid : NO_THREAD; }
