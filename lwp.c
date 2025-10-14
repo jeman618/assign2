@@ -1,6 +1,6 @@
 // Partner Names: 
 // Sreerenjini Surendran (snamboot)
-// Juan E Cisneroos (jcisne23)
+// Juan E Cisneros (jcisne23)
 // Katie Slobodsky (kslobods)
 
 #define _GNU_SOURCE
