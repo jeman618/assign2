@@ -1,5 +1,7 @@
-// lwp.c — minimal user-level threads with a round-robin scheduler
-// "studenty" version that matches your partner's style and names.
+// Partner Names: 
+// Sreerenjini Surendran (snamboot)
+// Juan E Cisneroos (jcisne23)
+// Katie Slobodsky (kslobods)
 
 #define _GNU_SOURCE
 #include <stdio.h>
