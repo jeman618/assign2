@@ -77,7 +77,9 @@ static size_t page_align(size_t n){
 
 static void *alloc_stack(size_t *out_sz){
   struct rlimit rl; size_t want;
-  if(getrlimit(RLIMIT_STACK,&rl)==0 && rl.rlim_cur>0 && rl.rlim_cur!=RLIM_INFINITY)
+  if (getrlimit(RLIMIT_STACK, &rl) == 0 &&
+    rl.rlim_cur > 0 &&
+    rl.rlim_cur != RLIM_INFINITY)
     want = (size_t)rl.rlim_cur;
   else
     want = 8ul<<20; /* 8 MB default */
