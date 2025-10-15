@@ -1,5 +1,5 @@
 // Partner Names:
-// Sreerenjini Surendran (snamboot)
+// Sreerenjini Surendran Namboothiri (snamboot)
 // Juan E Cisneros (jcisne23)
 // Katie Slobodsky (kslobods)
 
