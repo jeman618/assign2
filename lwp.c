@@ -14,17 +14,20 @@
 #include "lwp.h"
 
 /* ====== Scheduler state ====== */
-thread head    = NULL;  /* RR ready queue head (circular, uses sched_one/sched_two) */
+thread head    = NULL;  /* RR ready queue head
+                         * (circular, uses sched_one/sched_two)
+                         */
+
 thread current = NULL;  /* currently running LWP */
 int    qlen    = 0;     /* number of runnable LWPs */
 
 /* ====== Book-keeping ====== */
 static tid_t  next_tid = 1;
-static thread all_list = NULL;                  /* singly linked via lib_one   */
-static thread morgue_h = NULL, morgue_t = NULL; /* terminated threads FIFO     */
-static thread wait_h   = NULL, wait_t   = NULL; /* waiters (blocked in wait)   */
+static thread all_list = NULL;                  /* singly linked via lib_one */
+static thread morgue_h = NULL, morgue_t = NULL; /* terminated threads FIFO   */
+static thread wait_h   = NULL, wait_t   = NULL; /* waiters (blocked in wait) */
 
-static scheduler CurrSched;                     /* active scheduler vtable     */
+static scheduler CurrSched;                     /* active scheduler vtable   */
 
 #define QNEXT(t) ((t)->sched_one)
 #define QPREV(t) ((t)->sched_two)
@@ -135,7 +138,14 @@ thread rr_next(void){
 int rr_qlen(void){ return qlen; }
 
 /* publish a scheduler table */
-struct scheduler rr_publish = { rr_init, rr_shutdown, rr_admit, rr_remove, rr_next, rr_qlen };
+struct scheduler rr_publish = {
+  rr_init,
+  rr_shutdown,
+  rr_admit,
+  rr_remove,
+  rr_next,
+  rr_qlen
+};
 scheduler RoundRobin = &rr_publish;
 
 /* ====== Context switch + launch shim ====== */
@@ -295,7 +305,9 @@ tid_t lwp_wait(int *status){
 
   if(status) *status = (int)corpse->status;
   tid_t id = corpse->tid;
-  if(corpse->stack) free_stack(corpse->stack, corpse->stacksize); /* never free main */
+  if(corpse->stack){
+  free_stack(corpse->stack, corpse->stacksize);  /* never free main */
+}
   free(corpse);
   return id;
 }
