@@ -1,5 +1,21 @@
-Juan E Cisneros
+Partner Names: 
 
-Sreerenjini Surendran Namboothiri
+    Juan E Cisneros (jcisne23)
 
-Katie Slobodsky (kslobods)
+    Sreerenjini Surendran Namboothiri (snamboot)
+
+    Katie Slobodsky (kslobods)
+
+Instructions:
+
+    In terminal, run the commands:
+
+    make clean
+    make
+    export LD_LIBRARY_PATH="$PWD:${LD_LIBRARY_PATH}"
+    ./numbers
+    ./hungrysnakes
+    ./randomsnakes
+
+
+
