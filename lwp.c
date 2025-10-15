@@ -268,12 +268,12 @@ void lwp_start(void){
 void lwp_yield(void){
   if(!CurrSched) lwp_set_scheduler(NULL);
   thread next = CurrSched->next();
-  if(!next) _exit(LWPTERMSTAT(current ? current->status : 0));
+  if(!next) exit(LWPTERMSTAT(current ? current->status : 0));
   jump_to(next);
 }
 
 void lwp_exit(int exitval){
-  if(!current) _exit(exitval & 0xFF);
+  if(!current) exit(exitval & 0xFF);
   current->status = MKTERMSTAT(LWP_TERM, exitval & 0xFF);
 
   CurrSched->remove(current);
@@ -288,7 +288,7 @@ void lwp_exit(int exitval){
   }
 
   thread next = CurrSched->next();
-  if(!next) _exit(LWPTERMSTAT(current->status));
+  if(!next) exit(LWPTERMSTAT(current->status));
   jump_to(next);
 }
 
