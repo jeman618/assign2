@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <stdio.h>
 #include "util.h"
 
 void install_handler(int sig, void (*handler)(int)) {

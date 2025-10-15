@@ -31,7 +31,9 @@ static scheduler CurrSched; /* active scheduler vtable */
 #define QPREV(t) ((t)->sched_two)
 
 /* tiny list helpers */
-static void push_all(thread t) { 
+static void push_all(thread t) {
+  if (!t)
+    return;
   t->lib_one = all_list; 
   all_list = t; 
 }
@@ -221,15 +223,40 @@ void lwp_set_scheduler(scheduler s){
   if(CurrSched == s) 
     return;
 
+  //attempts to handle transfering threads between schedulers
+  //---------------------
+  scheduler old = CurrSched;
+  thread t = all_list;
+  if (old && old->shutdown)
+    old->shutdown();
+  //---------------------
+
   CurrSched = s;
   if(CurrSched->init) 
     CurrSched->init();
+
+  //attempts to handle transfering threads between schedulers
+  //---------------------
+  if (old && old->qlen() > 0) {
+        
+        while ( (t = old->next()) ) {
+            CurrSched->admit(t);   
+        }
+    }
+  //---------------------
+  
 }
 scheduler lwp_get_scheduler(void){ 
   return CurrSched ? CurrSched : RoundRobin; 
 }
 
 thread tid2thread(tid_t tid){
+  //attempts to handle tid2thread taking a bad thread
+  //---------------------
+  if (tid <= NO_THREAD)
+    return NULL;
+  //---------------------
+
   for(thread t=all_list; t; t=t->lib_one) 
     if(t->tid==tid) 
       return t;
@@ -270,7 +297,10 @@ tid_t lwp_create(lwpfun func, void *argument){
   *(void**)(frame + 0) = (void*)0;          /* fake saved %rbp               */
   *(void**)(frame + 8) = (void*)lwp_stub;   /* return address                 */
   t->state.rbp = frame;                     /* leave: mov rbp->rsp; pop rbp   */
-  t->state.rsp = frame + 8;                 /* not used by leave, harmless    */
+  //attempts to handle schedule alignment
+  //---------------------
+  t->state.rsp = frame;                /* not used by leave, harmless    */
+  //---------------------
 
   /* pass function & argument via registers for the stub */
   t->state.rdi = (unsigned long)func;
