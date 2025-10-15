@@ -240,7 +240,8 @@ void lwp_set_scheduler(scheduler s){
   if (old && old->qlen() > 0) {
         
         while ( (t = old->next()) ) {
-            CurrSched->admit(t);   
+            CurrSched->admit(t);
+            old->remove(t);   
         }
     }
   //---------------------
